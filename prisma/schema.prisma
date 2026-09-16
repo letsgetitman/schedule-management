@@ -1,0 +1,133 @@
+// Prisma schema for the couple schedule / restaurant map / workout app.
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A couple links exactly two User accounts so schedules and restaurants
+// can be shared between them via an invite code.
+model Couple {
+  id         String       @id @default(cuid())
+  inviteCode String       @unique @default(cuid())
+  createdAt  DateTime     @default(now())
+  users      User[]
+  events     Event[]
+  restaurants Restaurant[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  coupleId String?
+  couple   Couple? @relation(fields: [coupleId], references: [id])
+
+  events       Event[]
+  restaurants  Restaurant[]
+  workoutPlans WorkoutPlan[]
+  workoutLogs  WorkoutLog[]
+}
+
+enum EventCategory {
+  DATE
+  PERSONAL
+  WORK
+  HEALTH
+  ETC
+}
+
+// Single source of truth for month / week / day calendar views.
+model Event {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  date        DateTime // calendar day (time component ignored)
+  startTime   String // "HH:mm", for the day timeline view
+  endTime     String // "HH:mm"
+  category    EventCategory @default(PERSONAL)
+  tag         String?
+  completed   Boolean       @default(false) // checked off in the day timeline view
+  isShared    Boolean       @default(false) // visible to both partners
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  coupleId String?
+  couple   Couple? @relation(fields: [coupleId], references: [id])
+
+  restaurants Restaurant[]
+
+  @@index([date])
+  @@index([coupleId, date])
+}
+
+// Restaurant / 맛집 pins, sourced from Naver Local Search and placed on
+// Naver Maps by lat/lng.
+model Restaurant {
+  id           String   @id @default(cuid())
+  name         String
+  category     String?
+  address      String?
+  lat          Float
+  lng          Float
+  naverPlaceId String? // id/link returned by Naver local search API
+  memo         String?
+  visited      Boolean  @default(false)
+  rating       Int? // 1-5, personal rating after visiting
+  createdAt    DateTime @default(now())
+
+  addedById String
+  addedBy   User   @relation(fields: [addedById], references: [id])
+
+  coupleId String?
+  couple   Couple? @relation(fields: [coupleId], references: [id])
+
+  eventId String? // optional link to the date/event visited on
+  event   Event?  @relation(fields: [eventId], references: [id])
+
+  @@index([coupleId])
+}
+
+// Weekly planned workout volume per exercise, e.g. "이번주 벤치프레스 12세트 목표".
+model WorkoutPlan {
+  id            String   @id @default(cuid())
+  weekStartDate DateTime // Monday of the target week
+  exercise      String
+  targetSets    Int
+  targetReps    Int
+  targetWeight  Float? // kg, optional
+  createdAt     DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, weekStartDate])
+}
+
+// Actual logged sets, aggregated per week/exercise and compared against
+// WorkoutPlan for the plan-vs-actual bar chart.
+model WorkoutLog {
+  id           String   @id @default(cuid())
+  date         DateTime
+  exercise     String
+  actualSets   Int
+  actualReps   Int
+  actualWeight Float?
+  createdAt    DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId, date])
+}
